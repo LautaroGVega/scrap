@@ -1,6 +1,27 @@
 import requests
 from bs4 import BeautifulSoup
+from urllib.parse import urlparse
 from thespian.actors import Actor, ActorSystem
+
+# Función para extraer el precio de MercadoLibre
+def scrape_mercadolibre(soup):
+    price_tag = soup.find('meta', {'itemprop': 'price'})
+    return price_tag['content'] if price_tag else 'No encontrado'
+
+# Función actualizada para extraer el precio de Tiendamia
+def scrape_tiendamia(soup):
+    # Buscar el span que contiene el precio en Tiendamia
+    price_tag = soup.find('span', class_='currency_price')
+    if price_tag:
+        # Limpiar el precio y formatearlo
+        price = price_tag.text.strip().replace('AR$', '').replace('.', '').replace(',', '.')
+        return price
+    return 'No encontrado'
+
+# Función para extraer el precio de FullH4rd
+def scrape_fullh4rd(soup):
+    price_tag = soup.find('div', {'class': 'precio'})
+    return price_tag.text.strip() if price_tag else 'No encontrado'
 
 # Actor para hacer scraping de una URL
 class ScraperActor(Actor):
@@ -8,19 +29,27 @@ class ScraperActor(Actor):
         url = message
         response = requests.get(url)
         soup = BeautifulSoup(response.content, 'html.parser')
-        # Buscar el precio dentro de la etiqueta meta
-        price_tag = soup.find('meta', {'itemprop': 'price'})
-        if price_tag:
-            price = price_tag['content']
+        
+        # Identificar el dominio de la URL
+        domain = urlparse(url).netloc
+
+        # Lógica de scraping según el dominio
+        if 'mercadolibre.com' in domain:
+            price = scrape_mercadolibre(soup)
+        elif 'tiendamia.com' in domain:
+            price = scrape_tiendamia(soup)
+        elif 'fullh4rd.com' in domain:
+            price = scrape_fullh4rd(soup)
         else:
-            price = 'No encontrado'
+            price = 'Dominio no soportado'
+
         self.send(sender, (url, price))
 
 # Actor para comparar precios
 class CompareActor(Actor):
     def receiveMessage(self, message, sender):
         prices = message
-        valid_prices = [(source, price) for source, price in prices if price != 'No encontrado']
+        valid_prices = [(source, price) for source, price in prices if price != 'No encontrado' and price != 'Dominio no soportado']
         
         if valid_prices:
             best_price = min(valid_prices, key=lambda x: float(x[1].replace(',', '').replace('.', '')))
@@ -32,9 +61,9 @@ class CompareActor(Actor):
 
 # URLs proporcionadas
 urls = [
-    'https://www.mercadolibre.com.ar/mouse-gamer-de-juego-hyperx-pulsefire-surge-hx-mc002b-negro/p/MLA10763791#polycard_client=search-nordic&searchVariation=MLA10763791&position=10&search_layout=stack&type=product&tracking_id=89e17dcc-54d3-4a6c-b760-1424841d184b&wid=MLA934640226&sid=search',
-    'https://www.mercadolibre.com.ar/mouse-gamer-de-juego-logitechg-series-hero-g502-negro/p/MLA17485023#polycard_client=search-nordic&searchVariation=MLA17485023&position=1&search_layout=stack&type=product&tracking_id=6203f7d6-a8bb-4c17-a5c9-2cfe36f2ad44&wid=MLA1730800598&sid=search',
-    'https://www.mercadolibre.com.ar/logitech-g-serie-g-lightspeed-g305-black/p/MLA11259955#polycard_client=search-nordic&searchVariation=MLA11259955&position=1&search_layout=stack&type=product&tracking_id=b6cb51ba-6e33-400c-ab0c-c82d14ae7ad7&wid=MLA1369467985&sid=search'
+    'https://www.mercadolibre.com.ar/logitech-g-series-lightspeed-g502-negro/p/MLA15173180',
+    'https://tiendamia.com/ar/producto?amz=B07L4BM851&pName=Logitech%20G502%20Lightspeed%20Wireless%20Gaming%20Mouse%20with%20Hero%2025K%20Sensor&comma;%20PowerPlay%20Compatible&comma;%20Tunable%20Weights%20and%20Lightsync%20RGB%20-%20Black',
+    'https://fullh4rd.com.ar/prod/12631/mouse-logitech-g502-wireless-gaming-lightspeed-910-005566'
 ]
 
 # Función principal para iniciar el sistema de actores
